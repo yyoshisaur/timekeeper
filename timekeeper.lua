@@ -22,6 +22,7 @@ local self_buff_1_16 = L{}
 local self_buff_17_32 = L{}
 local custom_timer = L{}
 local vana_offset = 572662306+1009810800
+local on_zone_change = false
 
 function time_to_string(time)
     if time == nil then return '' end
@@ -287,8 +288,9 @@ end
 
 windower.register_event('prerender', function()
     local current_time = os.clock()
+    local player = windower.ffxi.get_player()
     if current_time < update_time + tick then return end
-    if not windower.ffxi.get_player() then hide_all() return end
+    if on_zone_change or not player or player.status == 4 then hide_all() return end
     update_ability_recast()
     update_spell_recast()
     update_self_buff(self_buff_1_16, buff_text_1_16)
@@ -299,6 +301,12 @@ windower.register_event('prerender', function()
 end)
 
 local incoming_handler = {
+    [0x0A] = function(data)
+        on_zone_change = false
+    end,
+    [0x0B] = function(data)
+        on_zone_change = true
+    end,
     [0x037] = function(data)
         if not data then return end
         vana_offset = os.time() - (((data:unpack("I",0x41)*60 - data:unpack("I",0x3D)) % 0x100000000) / 60)
