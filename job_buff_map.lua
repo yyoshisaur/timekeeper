@@ -123,10 +123,12 @@ map.ability_charge = {
                     return 80
                 elseif level < 90 then
                     return 60
-                elseif level == 99 and jp_spent < 550 then
-                    return 48
                 else
-                    return 33
+                    if jp_spent < 550 then
+                        return 48
+                    else
+                        return 33
+                    end
                 end
             end
 
