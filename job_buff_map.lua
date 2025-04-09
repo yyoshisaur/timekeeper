@@ -126,7 +126,7 @@ map.ability_charge = {
                 elseif level == 99 and jp_spent < 550 then
                     return 48
                 else
-                    return 48
+                    return 33
                 end
             end
 
