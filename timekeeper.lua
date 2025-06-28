@@ -6,25 +6,29 @@ _addon.commands = { 'tk' }
 
 require('luau')
 require('pack')
-local texts            = require('texts')
+local texts                  = require('texts')
 
-local job_buff_map     = require('job_buff_map')
+local job_buff_map           = require('job_buff_map')
 -- Meiryo
-local ability_box      = texts.new({ pos = { x = 200, y = 400 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
-local spell_box        = texts.new({ pos = { x = 200, y = 500 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
-local buff_box_1_16    = texts.new({ pos = { x = 500, y = 135 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 8, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
-local buff_box_17_32   = texts.new({ pos = { x = 670, y = 135 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 8, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
-local focused_buff_box = texts.new({ pos = { x = 600, y = 320 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
-local custom_timer_box = texts.new({ pos = { x = 450, y = 500 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
-local tick             = 1 / 15
-local update_time      = os.clock()
-local self_buff_1_16   = L {}
-local self_buff_17_32  = L {}
-local custom_timer     = L {}
-local vana_offset      = 572662306 + 1009810800
-local on_zone_change   = false
+local ability_box            = texts.new({ pos = { x = 200, y = 400 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
+local spell_box              = texts.new({ pos = { x = 200, y = 500 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
+local buff_box_1_16          = texts.new({ pos = { x = 500, y = 135 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 8, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
+local buff_box_17_32         = texts.new({ pos = { x = 670, y = 135 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 8, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
+local focused_buff_box       = texts.new({ pos = { x = 600, y = 135 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
+local custom_timer_box       = texts.new({ pos = { x = 450, y = 500 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
+local prerender_tick         = 1 / 10
+local postrender_tick        = 1 / 5
+local prerender_update_time  = os.clock()
+local postrender_update_time = os.clock()
+local self_buff_1_16         = L {}
+local self_buff_17_32        = L {}
+local custom_timer           = L {}
+local vana_offset            = 572662306 + 1009810800
+local on_zone_change         = false
 
-local bar_colors       = (function()
+local is_self_buff_active    = false
+
+local bar_colors             = (function()
     local colors = L {}
     for i = 1, 10 do
         r = math.floor(255 * (1 - (i - 1) / 9))
@@ -38,6 +42,7 @@ end)()
 local function hpp_to_text(hpp)
     local hpp_level = math.ceil(hpp / 10)
     hpp_level = hpp_level < 1 and 1 or hpp_level
+    hpp_level = hpp_level > 10 and 10 or hpp_level
     return string.format('%3d', hpp):text_color(bar_colors[hpp_level].red, bar_colors[hpp_level].green,
         bar_colors[hpp_level].blue)
 end
@@ -65,9 +70,9 @@ local function buff_to_colorize_text(buff_id, aka)
     local buff_name = res.buffs[buff_id].name
     if aka then
         buff_name = (job_buff_map.main[main_job].aka and job_buff_map.main[main_job].aka[buff_id]) and
-        job_buff_map.main[main_job].aka[buff_id] or buff_name
+            job_buff_map.main[main_job].aka[buff_id] or buff_name
         buff_name = (job_buff_map.sub[sub_job] and job_buff_map.sub[sub_job].aka and job_buff_map.sub[sub_job].aka[buff_id]) and
-        job_buff_map.sub[sub_job].aka[buff_id] or buff_name
+            job_buff_map.sub[sub_job].aka[buff_id] or buff_name
     end
     if job_buff_map.debuff.id:contains(buff_id) then
         local c = job_buff_map.debuff.color
@@ -94,16 +99,20 @@ local function update_ability_recast()
     local main_job = windower.ffxi.get_player().main_job
     local sub_job = windower.ffxi.get_player().sub_job
     local recast_ability_text = L {}
+    local ability_dupe = L { 10 }
     for i, v in pairs(ability_recasts) do
-        if v > 0 then
-            if job_buff_map.ability_charge.id:contains(i) then
-                local charge = job_buff_map.ability_charge.get_charge(i, v)
-                recast_ability_text:append(string.format('%s [%d/%d] %s', res.ability_recasts[i].ja,
-                    charge.max - charge.used, charge.max, time_to_string(charge.recast)))
-            elseif job_buff_map.sp.id:contains(i) then
-                recast_ability_text:append(string.format('%s %s', job_buff_map.sp.name[main_job][i], time_to_string(v)))
-            else
-                recast_ability_text:append(string.format('%s %s', res.ability_recasts[i].ja, time_to_string(v)))
+        if not ability_dupe:contains(i) then
+            if v > 0 then
+                if job_buff_map.ability_charge.id:contains(i) then
+                    local charge = job_buff_map.ability_charge.get_charge(i, v)
+                    recast_ability_text:append(string.format('%s [%d/%d] %s', res.ability_recasts[i].ja,
+                        charge.max - charge.used, charge.max, time_to_string(charge.recast)))
+                elseif job_buff_map.sp.id:contains(i) then
+                    recast_ability_text:append(string.format('%s %s', job_buff_map.sp.name[main_job][i],
+                        time_to_string(v)))
+                else
+                    recast_ability_text:append(string.format('%s %s', res.ability_recasts[i].ja, time_to_string(v)))
+                end
             end
         end
     end
@@ -120,7 +129,7 @@ end
 local function update_spell_recast()
     local spell_recasts = windower.ffxi.get_spell_recasts()
     local recast_spell_text = L {}
-    for i, v in pairs(spell_recasts) do
+    for i, v in ipairs(spell_recasts) do
         if v > 0 then
             recast_spell_text:append(string.format('%s %s', res.spells[i].ja, time_to_string(v / 60)))
         end
@@ -211,7 +220,7 @@ local function pet_info_to_string()
     local me = windower.ffxi.get_mob_by_target('me')
     if me and me.pet_index then
         local pet = windower.ffxi.get_mob_by_target('pet')
-        if pet then
+        if pet and pet.hpp then
             return string.format('%s %s %s %%', string.text_color('Ⓟ', 225, 196, 0), pet.name, hpp_to_text(pet.hpp))
         end
     end
@@ -224,13 +233,13 @@ local function update_focused_buff()
     local sub_job = windower.ffxi.get_player().sub_job
     local b = L(windower.ffxi.get_player().buffs)
 
-    focused_buff_box:clear()
-    focused_buff_box:append('◤ FOCUSED BUFFS ◥\n')
+    -- focused_buff_box:clear()
+    -- focused_buff_box:append('◤ FOCUSED BUFFS ◥\n')
 
     local pet_str = pet_info_to_string()
-    if pet_str then
-        focused_buff_box:append(string.format('%s\n', pet_str))
-    end
+    -- if pet_str then
+    --     focused_buff_box:append(string.format('%s\n', pet_str))
+    -- end
 
     local b_1_32 = self_buff_1_16 + self_buff_17_32
     local b_pinned = L(job_buff_map.common.pinned:map(function(id) return { id = id, duration = 0, update_time = nil } end)) +
@@ -269,7 +278,7 @@ local function update_focused_buff()
                         (job_buff_map.geo_buff:contains(buff.id) and '[Geo]' or '')))
         end
     end)
-    focused_buff_box:append(pinned:concat('\n'))
+    -- focused_buff_box:append(pinned:concat('\n'))
 
     focued = b_1_32:map(function(buff)
         if job_buff_map.common.focused:contains(buff.id) or
@@ -292,9 +301,28 @@ local function update_focused_buff()
             return nil
         end
     end)
-    focused_buff_box:append('\n')
-    focused_buff_box:append(focued:concat('\n'))
-    focused_buff_box:show()
+    -- focused_buff_box:append('\n')
+    -- focused_buff_box:append(focued:concat('\n'))
+
+    if pet_str or pinned or focued then
+        focused_buff_box:clear()
+        focused_buff_box:append('◤ FOCUSED BUFFS ◥')
+        if pet_str then
+            focused_buff_box:append('\n')
+            focused_buff_box:append(string.format('%s', pet_str))
+        end
+        if pinned then
+            focused_buff_box:append('\n')
+
+            focused_buff_box:append(pinned:concat('\n'))
+        end
+        if focued then
+            focused_buff_box:append('\n')
+            focused_buff_box:append(focued:concat('\n'))
+        end
+        focused_buff_box:show()
+    end
+    -- focused_buff_box:show()
 end
 
 local function update_custom_timer()
@@ -334,18 +362,31 @@ end
 windower.register_event('prerender', function()
     local current_time = os.clock()
     local player = windower.ffxi.get_player()
-    if current_time < update_time + tick then return end
+    if current_time < prerender_update_time + prerender_tick then return end
     if on_zone_change or not player or player.status == 4 then
         hide_all()
         return
     end
     update_ability_recast()
     update_spell_recast()
-    update_self_buff(self_buff_1_16, buff_box_1_16)
-    update_self_buff(self_buff_17_32, buff_box_17_32)
+    if is_self_buff_active then
+        update_self_buff(self_buff_1_16, buff_box_1_16)
+        update_self_buff(self_buff_17_32, buff_box_17_32)
+    end
+    prerender_update_time = current_time
+end)
+
+windower.register_event('postrender', function()
+    local current_time = os.clock()
+    local player = windower.ffxi.get_player()
+    if current_time < postrender_update_time + postrender_tick then return end
+    if on_zone_change or not player or player.status == 4 then
+        hide_all()
+        return
+    end
     update_focused_buff()
     update_custom_timer()
-    update_time = current_time
+    postrender_update_time = current_time
 end)
 
 local incoming_handler = {
@@ -413,17 +454,26 @@ windower.register_event('addon command', function(command, ...)
         end)
 
         if not timer_exists then
-            custom_timer:append({ name = timer_name, count = timer_count, update_time = update_time, count_mode =
-            count_mode })
+            custom_timer:append({
+                name = timer_name,
+                count = timer_count,
+                update_time = update_time,
+                count_mode =
+                    count_mode
+            })
         end
     elseif command == 'remove' then
         local timer_name = windower.from_shift_jis(windower.convert_auto_trans(args[1]))
         custom_timer = custom_timer:filter(function(timer)
             return timer.name ~= timer_name
         end)
+    elseif command == 'selfbuff' then
+        is_self_buff_active = not is_self_buff_active
+        log('Self Buff: ', is_self_buff_active)
     else
         log('//tk add [timer_name] [timer_count] [count_mode(up/down)]')
         log('//tk remove [timer_name]')
+        log('//tk selfbuff')
     end
 end)
 
