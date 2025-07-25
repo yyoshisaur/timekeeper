@@ -15,7 +15,7 @@ local spell_box              = texts.new({ pos = { x = 200, y = 500 }, padding =
 local buff_box_1_16          = texts.new({ pos = { x = 500, y = 135 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 8, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
 local buff_box_17_32         = texts.new({ pos = { x = 670, y = 135 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 8, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
 local focused_buff_box       = texts.new({ pos = { x = 600, y = 135 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
-local custom_timer_box       = texts.new({ pos = { x = 450, y = 500 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
+local custom_timer_box       = texts.new({ pos = { x = 800, y = 400 }, padding = 1, bg = { alpha = 64 }, text = { font = 'MS Gothic', size = 10, stroke = { width = 2, alpha = 144 } }, flags = { bold = true, draggable = false } })
 local prerender_tick         = 1 / 10
 local postrender_tick        = 1 / 5
 local prerender_update_time  = os.clock()
@@ -100,6 +100,7 @@ local function update_ability_recast()
     local sub_job = windower.ffxi.get_player().sub_job
     local recast_ability_text = L {}
     local ability_dupe = L { 10 }
+    if not main_job then return end
     for i, v in pairs(ability_recasts) do
         if not ability_dupe:contains(i) then
             if v > 0 then
@@ -469,6 +470,7 @@ windower.register_event('addon command', function(command, ...)
         end)
     elseif command == 'selfbuff' then
         is_self_buff_active = not is_self_buff_active
+        hide_all()
         log('Self Buff: ', is_self_buff_active)
     else
         log('//tk add [timer_name] [timer_count] [count_mode(up/down)]')
